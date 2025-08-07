@@ -1,0 +1,20 @@
+input,expected_output
+"What is the capital of France?","The capital of France is Paris."
+"Explain photosynthesis in simple terms.","Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar. Plants capture light energy with their leaves and use it to convert water and carbon dioxide into glucose (sugar) for food, releasing oxygen as a byproduct."
+"Write a Python function to calculate factorial.","def factorial(n):
+    if n < 0:
+        raise ValueError('Factorial is not defined for negative numbers')
+    elif n == 0 or n == 1:
+        return 1
+    else:
+        result = 1
+        for i in range(2, n + 1):
+            result *= i
+        return result"
+"What are the primary colors?","The primary colors are red, blue, and yellow (in traditional color theory for painting and art). In the RGB color model used for light and screens, the primary colors are red, green, and blue."
+"Translate 'Hello, how are you?' to Spanish.","Hola, ¿cómo estás?"
+"List three benefits of regular exercise.","Three benefits of regular exercise are: 1) Improved cardiovascular health and reduced risk of heart disease, 2) Better mental health including reduced stress and anxiety, and 3) Increased strength, flexibility, and overall physical fitness."
+"What is 15% of 80?","15% of 80 is 12. (Calculation: 0.15 × 80 = 12)"
+"Explain the difference between a metaphor and a simile.","A simile is a figure of speech that compares two things using 'like' or 'as' (e.g., 'She runs like the wind'). A metaphor is a direct comparison that states one thing is another without using 'like' or 'as' (e.g., 'Time is money'). Both are used to make descriptions more vivid, but similes explicitly acknowledge the comparison while metaphors make an implicit comparison."
+"What is the boiling point of water?","The boiling point of water is 100 degrees Celsius (212 degrees Fahrenheit) at standard atmospheric pressure (sea level)."
+"Summarize the plot of Romeo and Juliet in one sentence.","Romeo and Juliet is Shakespeare's tragedy about two young lovers from feuding families in Verona whose secret marriage and attempts to be together ultimately lead to their deaths, which finally reconciles their warring families."
