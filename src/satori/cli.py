@@ -18,7 +18,7 @@ from .config import get_config
 from .config.cli import config_app
 from .core.run_manager import RunManager
 from .io.result_writer import ResultWriter
-from .judges.openai_judge import OpenAIJudge
+from .judges.factory import JudgesFactory
 from .providers import ProviderFactory, create_provider
 
 app = typer.Typer(
@@ -30,15 +30,15 @@ app.add_typer(config_app)
 console = Console()
 
 
-def create_judge(judge_model: str, config=None) -> OpenAIJudge:
-  """Create a judge instance."""
-  judge_kwargs = {}
-  if config and hasattr(config, "providers"):
-    # Judge uses OpenAI provider config
-    openai_config = config.providers.get("openai", {})
-    judge_kwargs.update(openai_config)
+def create_judge(judge_model: str, config=None):
+  """Create a judge instance.
 
-  return OpenAIJudge(model=judge_model, **judge_kwargs)
+  Supports identifiers like:
+  - "openai:gpt-4o" -> OpenAIJudge
+  - "anthropic:claude-3-5-sonnet-20241022" -> GenericLLMJudge via provider
+  - "gpt-4.1" -> uses default provider from config (falls back to openai)
+  """
+  return JudgesFactory.create(judge_model, config=config)
 
 
 @app.command()
@@ -89,6 +89,11 @@ def run(
       "Max tokens for completion. Mapped as needed (e.g., OpenAI newer "
       "models may use max_completion_tokens)."
     ),
+  ),
+  provider_timeout: Optional[float] = typer.Option(
+    None,
+    "--provider-timeout",
+    help="Timeout (seconds) for provider generation (applies to HTTP client and per-call wait)",
   ),
   concurrency: int = typer.Option(
     5,
@@ -167,7 +172,13 @@ def run(
 
     with console.status("[bold green]Initializing provider and judge..."):
       try:
-        llm_provider = create_provider(actual_provider, config=config)
+        provider_kwargs: Dict[str, Any] = {}
+        if provider_timeout is not None:
+          provider_kwargs["timeout"] = provider_timeout
+
+        llm_provider = create_provider(
+          actual_provider, config=config, **provider_kwargs
+        )
         llm_judge = create_judge(actual_judge, config=config)
       except Exception as e:
         console.print(f"[red]Error initializing components: {e}[/red]")
@@ -209,6 +220,7 @@ def run(
       rate_limit_delay=actual_rate_limit,
       fail_fast=True,
       generation_params=generation_params,
+      provider_call_timeout=provider_timeout,
     )
 
     console.print("\n[bold]Starting evaluation...[/bold]")
