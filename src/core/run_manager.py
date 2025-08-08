@@ -1,15 +1,10 @@
+"""Core run manager handling concurrency, retries, and rate limiting."""
+
 import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-
-from tenacity import (
-  retry,
-  retry_if_exception_type,
-  stop_after_attempt,
-  wait_exponential,
-)
+from typing import Any, Callable, Dict, List, Optional
 
 from ..io.csv_loader import CSVLoader
 from ..judges.base import BaseJudge, JudgeError
@@ -104,17 +99,28 @@ class RunManager:
 
     self.semaphore = asyncio.Semaphore(max_concurrent)
 
+    # Global rate limiter across requests (provider + judge)
+    self._rate_limit_delay = max(0.0, rate_limit_delay)
+    self._rate_lock = asyncio.Lock()
+    self._last_request_time: float = 0.0
+
     self.total_requests = 0
     self.successful_requests = 0
     self.failed_requests = 0
 
   async def run_batch(
-    self, csv_path: str, progress_callback: Optional[callable] = None
+    self,
+    csv_path: Optional[str] = None,
+    test_cases: Optional[List[Dict[str, Any]]] = None,
+    progress_callback: Optional[
+      Callable[[int, int, "EvaluationResult"], None]
+    ] = None,
   ) -> BatchResults:
     """Run evaluation on a batch of test cases from a CSV file.
 
     Args:
         csv_path: Path to the CSV file with test cases
+        test_cases: Preloaded list of test case dicts (takes precedence if provided)
         progress_callback: Optional callback for progress updates
 
     Returns:
@@ -122,9 +128,12 @@ class RunManager:
     """
     start_time = time.time()
 
-    loader = CSVLoader(csv_path)
-    loader.load()
-    test_cases = loader.get_rows()
+    if test_cases is None:
+      if not csv_path:
+        raise ValueError("Either 'csv_path' or 'test_cases' must be provided")
+      loader = CSVLoader(csv_path)
+      loader.load()
+      test_cases = loader.get_rows()
 
     tasks = []
     for idx, test_case in enumerate(test_cases):
@@ -145,9 +154,11 @@ class RunManager:
         if isinstance(result, Exception):
           # Check for critical errors that should always stop execution
           if self._is_critical_error(result):
-            if hasattr(self.provider, "close"):
+            # Best-effort cleanup if provider exposes async close()
+            close_method = getattr(self.provider, "close", None)
+            if callable(close_method):
               try:
-                await self.provider.close()
+                await close_method()
               except Exception:
                 pass
             raise result
@@ -168,9 +179,10 @@ class RunManager:
         else:
           evaluation_results.append(result)
 
-    if hasattr(self.provider, "close"):
+    close_method = getattr(self.provider, "close", None)
+    if callable(close_method):
       try:
-        await self.provider.close()
+        await close_method()
       except Exception:
         pass
 
@@ -194,7 +206,7 @@ class RunManager:
     test_case: Dict[str, Any],
     index: int,
     total: int,
-    progress_callback: Optional[callable],
+    progress_callback: Optional[Callable[[int, int, "EvaluationResult"], None]],
   ) -> EvaluationResult:
     """Evaluate a single test case with semaphore control.
 
@@ -208,9 +220,6 @@ class RunManager:
         EvaluationResult for the test case
     """
     async with self.semaphore:
-      if self.rate_limit_delay > 0 and index > 0:
-        await asyncio.sleep(self.rate_limit_delay)
-
       result = await self._evaluate_single_with_retry(test_case)
 
       if progress_callback:
@@ -218,12 +227,6 @@ class RunManager:
 
       return result
 
-  @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((ProviderError, JudgeError)),
-    reraise=True,
-  )
   async def _evaluate_single_with_retry(
     self, test_case: Dict[str, Any]
   ) -> EvaluationResult:
@@ -240,60 +243,68 @@ class RunManager:
     input_text = test_case.get("input", "")
     expected_output = test_case.get("expected_output", "")
 
-    try:
-      candidate_output = await self.provider.generate(input_text)
+    attempt = 0
+    while True:
+      attempt += 1
+      try:
+        # Provider call with global rate limiting
+        await self._rate_limit()
+        candidate_output = await self.provider.generate(input_text)
 
-      judge_result = await self.judge.score(
-        input_text=input_text,
-        expected_output=expected_output,
-        candidate_output=candidate_output,
-      )
+        # Judge call with global rate limiting
+        await self._rate_limit()
+        judge_result = await self.judge.score(
+          input_text=input_text,
+          expected_output=expected_output,
+          candidate_output=candidate_output,
+        )
 
-      execution_time = time.time() - start_time
+        execution_time = time.time() - start_time
 
-      return EvaluationResult(
-        input_text=input_text,
-        expected_output=expected_output,
-        candidate_output=candidate_output,
-        score=float(judge_result["score"]),
-        explanation=judge_result["explanation"],
-        provider_name=str(self.provider),
-        judge_name=str(self.judge),
-        execution_time=execution_time,
-        error=None,
-      )
+        return EvaluationResult(
+          input_text=input_text,
+          expected_output=expected_output,
+          candidate_output=candidate_output,
+          score=float(judge_result["score"]),
+          explanation=str(judge_result["explanation"]),
+          provider_name=str(self.provider),
+          judge_name=str(self.judge),
+          execution_time=execution_time,
+          error=None,
+        )
 
-    except (ProviderError, JudgeError) as e:
-      if self.fail_fast:
-        raise e
-
-      execution_time = time.time() - start_time
-
-      return EvaluationResult(
-        input_text=input_text,
-        expected_output=expected_output,
-        candidate_output="",
-        score=0.0,
-        explanation=f"Evaluation failed: {str(e)}",
-        provider_name=str(self.provider),
-        judge_name=str(self.judge),
-        execution_time=execution_time,
-        error=str(e),
-      )
-    except Exception as e:
-      execution_time = time.time() - start_time
-
-      return EvaluationResult(
-        input_text=input_text,
-        expected_output=expected_output,
-        candidate_output="",
-        score=0.0,
-        explanation=f"Unexpected error: {str(e)}",
-        provider_name=str(self.provider),
-        judge_name=str(self.judge),
-        execution_time=execution_time,
-        error=str(e),
-      )
+      except (ProviderError, JudgeError) as e:
+        if self.fail_fast:
+          raise e
+        if attempt >= max(1, int(self.retry_attempts)):
+          execution_time = time.time() - start_time
+          return EvaluationResult(
+            input_text=input_text,
+            expected_output=expected_output,
+            candidate_output="",
+            score=0.0,
+            explanation=f"Evaluation failed: {str(e)}",
+            provider_name=str(self.provider),
+            judge_name=str(self.judge),
+            execution_time=execution_time,
+            error=str(e),
+          )
+        # exponential backoff: 1, 2, 4, capped at 8s
+        backoff_seconds = min(8.0, float(2 ** (attempt - 1)))
+        await asyncio.sleep(backoff_seconds)
+      except Exception as e:
+        execution_time = time.time() - start_time
+        return EvaluationResult(
+          input_text=input_text,
+          expected_output=expected_output,
+          candidate_output="",
+          score=0.0,
+          explanation=f"Unexpected error: {str(e)}",
+          provider_name=str(self.provider),
+          judge_name=str(self.judge),
+          execution_time=execution_time,
+          error=str(e),
+        )
 
   async def run_single(
     self, input_text: str, expected_output: str
@@ -346,6 +357,22 @@ class RunManager:
     mean = sum(scores) / len(scores)
     variance = sum((x - mean) ** 2 for x in scores) / (len(scores) - 1)
     return variance**0.5
+
+  async def _rate_limit(self) -> None:
+    """Enforce a minimum delay between outbound requests across tasks.
+
+    This provides a simple global QPS limiter: QPS ~= 1 / rate_limit_delay.
+    Set rate_limit_delay to 0 to disable.
+    """
+    if self._rate_limit_delay <= 0:
+      return
+    async with self._rate_lock:
+      now = time.monotonic()
+      elapsed = now - self._last_request_time
+      remaining = self._rate_limit_delay - elapsed
+      if remaining > 0:
+        await asyncio.sleep(remaining)
+      self._last_request_time = time.monotonic()
 
   def _is_critical_error(self, error: Exception) -> bool:
     """Check if an error is critical and should stop execution regardless of fail_fast setting.

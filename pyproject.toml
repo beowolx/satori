@@ -19,6 +19,8 @@ dependencies = [
     "rich>=14.1.0",
     "ruff>=0.12.7",
     "typer>=0.16.0",
+    "tenacity>=9.0.0",
+    "pyyaml>=6.0.2",
 ]
 authors = [{ name = "Beowolx" }]
 keywords = ["llm", "evaluation", "benchmark", "ai", "judge", "cli"]

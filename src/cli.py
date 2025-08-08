@@ -69,16 +69,16 @@ def run(
     "-o",
     help="Output file path for results. Format detected by extension (.json, .jsonl, .csv)",
   ),
-  concurrency: int = typer.Option(
-    5,
+  concurrency: Optional[int] = typer.Option(
+    None,
     "--concurrency",
     "-c",
     help="Number of concurrent evaluation requests (1-50, higher values increase speed but may hit rate limits)",
     min=1,
     max=50,
   ),
-  rate_limit_delay: float = typer.Option(
-    1.0,
+  rate_limit_delay: Optional[float] = typer.Option(
+    None,
     "--rate-limit-delay",
     "-r",
     help="Delay in seconds between requests to avoid API rate limiting",
@@ -113,24 +113,28 @@ def run(
   """
   try:
     # Get configuration with CLI args taking precedence
-    cli_args = {
-      "provider": provider,
-      "judge_model": judge_model,
-      "concurrency": concurrency,
-      "rate_limit_delay": rate_limit_delay,
-      "verbose": verbose,
-    }
+    cli_args = {}
+    if provider is not None:
+      cli_args["provider"] = provider
+    if judge_model is not None:
+      cli_args["judge_model"] = judge_model
+    if concurrency is not None:
+      cli_args["concurrency"] = concurrency
+    if rate_limit_delay is not None:
+      cli_args["rate_limit_delay"] = rate_limit_delay
+    # verbose is a runtime flag; keep separate
     config = get_config(cli_args)
 
     # Use config values (CLI args override config file/env vars)
     actual_provider = provider or config.default_provider
     actual_judge = judge_model or config.default_judge
+    # CLI already provided validated bounds; still honor config if None
     actual_concurrency = (
-      concurrency if "concurrency" in locals() else config.concurrency
+      concurrency if concurrency is not None else config.concurrency
     )
     actual_rate_limit = (
       rate_limit_delay
-      if "rate_limit_delay" in locals()
+      if rate_limit_delay is not None
       else config.rate_limit_delay
     )
 
@@ -165,7 +169,8 @@ def run(
 
     loader = CSVLoader(str(data))
     loader.load()
-    total_cases = len(loader)
+    cases = loader.get_rows()
+    total_cases = len(cases)
 
     progress = Progress(
       SpinnerColumn(),
@@ -193,7 +198,7 @@ def run(
 
       batch_results = asyncio.run(
         run_manager.run_batch(
-          csv_path=str(data),
+          test_cases=cases,
           progress_callback=update_progress,
         )
       )
