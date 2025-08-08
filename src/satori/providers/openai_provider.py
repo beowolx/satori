@@ -34,7 +34,8 @@ class OpenAIProvider(BaseLLMProvider):
 
     self.base_url = kwargs.get("base_url")
     self.organization = kwargs.get("organization")
-    self.timeout = kwargs.get("timeout", self.config.get("timeout", 60.0))
+    # Allow longer default to handle slow, reasoning-heavy models
+    self.timeout = kwargs.get("timeout", self.config.get("timeout", 180.0))
 
     # Initialize async client (sync client created on demand)
     self.async_client = AsyncOpenAI(

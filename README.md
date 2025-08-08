@@ -179,8 +179,14 @@ satori run data.csv --provider openai:gpt-4.1
 ### Custom Judge Model
 
 ```bash
-# Use a different model as judge
-satori run data.csv --provider ollama:llama2 --judge-model gpt-4o
+# OpenAI judge (native)
+satori run data.csv --provider openai:gpt-4.1 --judge-model openai:gpt-4o
+
+# Judge via other providers (provider-agnostic)
+satori run data.csv --provider ollama:llama2 --judge-model anthropic:claude-3-5-sonnet-20241022
+
+# Bare model falls back to default provider from config
+satori run data.csv --provider google:gemini-1.5-pro --judge-model gpt-4.1
 ```
 
 ### Save Results
@@ -193,14 +199,14 @@ satori run data.csv --provider openai:gpt-4.1 --output results.csv
 satori run data.csv --provider openai:gpt-4.1 --output results.json
 ```
 
-### Performance Tuning
+### Performance / Timeouts
 
 ```bash
-# Adjust concurrency (default: 5)
-satori run data.csv --provider openai:gpt-4.1 --concurrency 10
+# Increase provider timeout for complex prompts (seconds)
+satori run data.csv --provider openai:gpt-4.1 --provider-timeout 240
 
-# Add rate limiting delay (seconds between requests)
-satori run data.csv --provider openai:gpt-4.1 --rate-limit-delay 2.0
+# Adjust concurrency (default: 5) and rate limiting
+satori run data.csv --provider openai:gpt-4.1 --concurrency 3 --rate-limit-delay 0.5
 ```
 
 ### Compare Multiple Providers
