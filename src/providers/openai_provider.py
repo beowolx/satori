@@ -34,7 +34,7 @@ class OpenAIProvider(BaseLLMProvider):
 
     self.base_url = kwargs.get("base_url")
     self.organization = kwargs.get("organization")
-    self.timeout = kwargs.get("timeout", 60.0)
+    self.timeout = kwargs.get("timeout", self.config.get("timeout", 60.0))
 
     # Initialize async client (sync client created on demand)
     self.async_client = AsyncOpenAI(
@@ -98,6 +98,24 @@ class OpenAIProvider(BaseLLMProvider):
         raise ProviderError("Empty response from OpenAI API")
 
     except Exception as e:
+      # Try adaptive remediation for known 400s
+      adapted = self._adapt_params_on_400(str(e), kwargs)
+      if adapted is not None:
+        try:
+          messages = self._prepare_messages(
+            prompt, adapted.get("system_message")
+          )
+          generation_params = self._extract_generation_params(adapted)
+          retry_resp: ChatCompletion = (
+            await self.async_client.chat.completions.create(
+              model=self.model, messages=messages, **generation_params
+            )
+          )
+          if retry_resp.choices and len(retry_resp.choices) > 0:
+            return retry_resp.choices[0].message.content or ""
+        except Exception:
+          pass
+
       # Transform provider-specific errors
       if "api_key" in str(e).lower():
         raise ProviderError("Invalid OpenAI API key")
@@ -105,6 +123,8 @@ class OpenAIProvider(BaseLLMProvider):
         raise ProviderError(
           "OpenAI rate limit exceeded. Please wait and retry."
         )
+      elif "timeout" in str(e).lower() or "timed out" in str(e).lower():
+        raise ProviderError("Request timed out.")
       elif "model" in str(e).lower() and "not found" in str(e).lower():
         raise ProviderError(f"Model '{self.model}' not found or not accessible")
       else:
@@ -186,6 +206,7 @@ class OpenAIProvider(BaseLLMProvider):
     valid_params = [
       "temperature",
       "max_tokens",
+      "max_completion_tokens",
       "top_p",
       "frequency_penalty",
       "presence_penalty",
@@ -199,18 +220,39 @@ class OpenAIProvider(BaseLLMProvider):
       "user",
     ]
 
-    params = {}
+    params: Dict[str, Any] = {}
     for param in valid_params:
       if param in kwargs:
         params[param] = kwargs[param]
 
-    # Set defaults for common parameters if not specified
-    if "temperature" not in params:
-      params["temperature"] = 0.7
-    if "max_tokens" not in params:
-      params["max_tokens"] = 8192
+    # Do not set defaults that may be rejected by some models.
+    # Map generic max_tokens to max_completion_tokens when newer models demand it.
+    if "max_tokens" in params and "max_completion_tokens" not in params:
+      params["max_completion_tokens"] = params.pop("max_tokens")
 
     return params
+
+  def _adapt_params_on_400(
+    self, error_str: str, original_kwargs: Dict[str, Any]
+  ) -> Optional[Dict[str, Any]]:
+    """Try to adapt parameters based on OpenAI 400 messages to maximize compatibility.
+
+    Returns a new kwargs dict if adaptation is attempted, else None.
+    """
+    lower = error_str.lower()
+    adapted = dict(original_kwargs)
+
+    if "unsupported parameter" in lower and "max_tokens" in lower:
+      if "max_tokens" in adapted and "max_completion_tokens" not in adapted:
+        adapted["max_completion_tokens"] = adapted.pop("max_tokens")
+        return adapted
+
+    if "unsupported value" in lower and "temperature" in lower:
+      if "temperature" in adapted:
+        adapted.pop("temperature", None)
+        return adapted
+
+    return None
 
   def __repr__(self) -> str:
     """String representation of the provider."""

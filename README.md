@@ -20,6 +20,7 @@ A vendor-agnostic CLI tool for evaluating LLM responses using an "LLM-as-a-Judge
 - [Dataset Format](#dataset-format)
 - [Supported Providers](#supported-providers)
 - [Usage Examples](#usage-examples)
+- [Generation Parameters](#generation-parameters)
 - [Output Formats](#output-formats)
 - [Scoring System](#scoring-system)
 - [Development](#development)
@@ -231,6 +232,38 @@ satori --help
 satori run --help
 satori config --help
 ```
+
+## Generation Parameters
+
+Satori lets you pass generation parameters from the CLI. These are forwarded to the provider as-is. Some providers/models have different parameter names or constraints.
+
+Common flags:
+
+```bash
+# Temperature (float)
+satori run data.csv --provider openai:gpt-4o --temperature 0.7
+
+# Token limits (OpenAI newer models use max_completion_tokens)
+satori run data.csv --provider openai:gpt-4o --max-completion-tokens 2048
+
+# For older OpenAI models, you can use max-tokens; Satori will adapt when possible
+satori run data.csv --provider openai:gpt-4.1 --max-tokens 2048
+
+# Arbitrary params via --gen key=value (repeatable)
+satori run data.csv --provider huggingface:mistralai/Mistral-7B-Instruct-v0.2 \
+  --gen top_p=0.9 --gen stop=END --gen stop=a,b,c
+
+# Lists: comma-separated values are parsed into arrays
+satori run data.csv --provider openai:gpt-4o --gen stop=</s>,<|eot|>
+```
+
+Notes:
+
+- Parameters are forwarded to all providers. Provider-specific naming still applies. For example:
+  - OpenAI: some models reject `temperature` values other than default 1; Satori will automatically retry without `temperature` if a 400 indicates an unsupported value.
+  - OpenAI: if a 400 error indicates `max_tokens` is unsupported, Satori remaps to `max_completion_tokens` and retries.
+- For non-OpenAI providers, params are passed through unchanged. Use `--gen` to pass provider-specific options (e.g., `--gen max_new_tokens=512` for HuggingFace text generation, or `--gen stop=a,b`).
+- Because models vary, prefer the provider’s canonical names when known.
 
 ## Output Formats
 
