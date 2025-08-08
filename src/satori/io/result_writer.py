@@ -88,6 +88,7 @@ class ResultWriter:
         "failure_count": batch_results.failure_count,
         "total_time": batch_results.total_time,
         "timestamp": datetime.now().isoformat(),
+        "generation_params": batch_results.generation_params,
       },
       "statistics": {
         "average_score": batch_results.average_score,
@@ -133,6 +134,7 @@ class ResultWriter:
           "std_deviation": batch_results.std_score,
           "total_time": batch_results.total_time,
           "timestamp": datetime.now().isoformat(),
+          "generation_params": batch_results.generation_params,
         }
         f.write(json.dumps(metadata, default=str) + "\n")
 

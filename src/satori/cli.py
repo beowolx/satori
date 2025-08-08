@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
@@ -68,6 +68,27 @@ def run(
     "--output",
     "-o",
     help="Output file path for results. Format detected by extension (.json, .jsonl, .csv)",
+  ),
+  gen: List[str] = typer.Option(
+    [],
+    "--gen",
+    help=(
+      "Arbitrary generation params as key=value; repeatable. "
+      "Examples: --gen temperature=0.2 --gen max_tokens=1024 --gen stop=a,b"
+    ),
+  ),
+  temperature: Optional[float] = typer.Option(
+    None,
+    "--temperature",
+    help="Sampling temperature (provider-specific constraints apply)",
+  ),
+  max_tokens: Optional[int] = typer.Option(
+    None,
+    "--max-tokens",
+    help=(
+      "Max tokens for completion. Mapped as needed (e.g., OpenAI newer "
+      "models may use max_completion_tokens)."
+    ),
   ),
   concurrency: int = typer.Option(
     5,
@@ -152,12 +173,42 @@ def run(
         console.print(f"[red]Error initializing components: {e}[/red]")
         raise typer.Exit(1)
 
+    # Build generation params: config defaults < --gen < explicit flags
+    generation_params: Dict[str, Any] = {}
+    try:
+      provider_name, _ = ProviderFactory.parse_provider_string(actual_provider)
+    except Exception:
+      provider_name = (actual_provider or "").split(":", 1)[0]
+
+    provider_defaults = (
+      (config.providers.get(provider_name, {}) or {}).get(
+        "generation_defaults", {}
+      )
+      if hasattr(config, "providers")
+      else {}
+    )
+
+    # Start with provider defaults
+    if isinstance(provider_defaults, dict):
+      generation_params.update(provider_defaults)
+
+    # Merge --gen key=value overrides
+    cli_gen_params = _parse_gen_list(gen)
+    generation_params.update(cli_gen_params)
+
+    # Convenience flags have highest precedence
+    if temperature is not None:
+      generation_params["temperature"] = temperature
+    if max_tokens is not None:
+      generation_params["max_tokens"] = max_tokens
+
     run_manager = RunManager(
       provider=llm_provider,
       judge=llm_judge,
       max_concurrent=actual_concurrency,
       rate_limit_delay=actual_rate_limit,
       fail_fast=True,
+      generation_params=generation_params,
     )
 
     console.print("\n[bold]Starting evaluation...[/bold]")
@@ -368,3 +419,45 @@ def main():
 
 if __name__ == "__main__":
   main()
+
+
+def _parse_gen_list(items: List[str]) -> Dict[str, Any]:
+  """Parse repeatable --gen key=value items with basic type coercion.
+
+  Coercions:
+  - true/false -> bool
+  - ints/floats -> numeric
+  - comma-separated -> list[str]
+  """
+  parsed: Dict[str, Any] = {}
+  for item in items:
+    if "=" not in item:
+      continue
+    key, value = item.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if not key:
+      continue
+
+    lower = value.lower()
+    if lower in ("true", "false"):
+      parsed[key] = lower == "true"
+      continue
+
+    # numeric
+    try:
+      if "." in value:
+        parsed[key] = float(value)
+      else:
+        parsed[key] = int(value)
+      continue
+    except ValueError:
+      pass
+
+    # list
+    if "," in value:
+      parsed[key] = [v.strip() for v in value.split(",") if v.strip()]
+      continue
+
+    parsed[key] = value
+  return parsed

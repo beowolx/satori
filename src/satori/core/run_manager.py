@@ -52,6 +52,7 @@ class BatchResults:
   average_score: float
   median_score: float
   std_score: float
+  generation_params: Dict[str, Any] = field(default_factory=dict)
 
   def to_dict(self) -> Dict[str, Any]:
     return {
@@ -205,6 +206,7 @@ class RunManager:
       average_score=sum(scores) / len(scores) if scores else 0.0,
       median_score=self._calculate_median(scores),
       std_score=self._calculate_std(scores),
+      generation_params=self.generation_params,
     )
 
   async def _evaluate_single_with_semaphore(
