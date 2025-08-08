@@ -224,8 +224,8 @@ def path():
   Useful for troubleshooting configuration issues or manual editing.
 
   The configuration file is typically located at:
-  - Linux/Mac: ~/.config/satori/config.json
-  - Windows: %APPDATA%/satori/config.json
+  - Linux/Mac: ~/.config/satori/config.yaml
+  - Windows: %APPDATA%/satori/config.yaml
   """
   config_manager = get_config_manager()
   console.print(f"Configuration file: {config_manager.config_path}")
@@ -238,7 +238,7 @@ def path():
     )
 
 
-def _process_value(value: str) -> any:
+def _process_value(value: str) -> object:
   """Process string value into appropriate type."""
   # Try to convert to appropriate type
   if value.lower() in ("true", "false"):

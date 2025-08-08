@@ -924,8 +924,10 @@ dependencies = [
     { name = "openai" },
     { name = "pandas" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "ruff" },
+    { name = "tenacity" },
     { name = "typer" },
 ]
 
@@ -938,8 +940,10 @@ requires-dist = [
     { name = "openai", specifier = ">=1.99.1" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "ruff", specifier = ">=0.12.7" },
+    { name = "tenacity", specifier = ">=9.0.0" },
     { name = "typer", specifier = ">=0.16.0" },
 ]
 
