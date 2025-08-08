@@ -79,6 +79,9 @@ class RunManager:
     retry_attempts: int = 3,
     rate_limit_delay: float = 1.0,
     fail_fast: bool = True,
+    generation_params: Optional[Dict[str, Any]] = None,
+    provider_call_timeout: Optional[float] = None,
+    judge_call_timeout: Optional[float] = None,
   ):
     """Initialize the run manager.
 
@@ -96,6 +99,9 @@ class RunManager:
     self.retry_attempts = retry_attempts
     self.rate_limit_delay = rate_limit_delay
     self.fail_fast = fail_fast
+    self.generation_params: Dict[str, Any] = generation_params or {}
+    self.provider_call_timeout = provider_call_timeout
+    self.judge_call_timeout = judge_call_timeout
 
     self.semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -249,15 +255,33 @@ class RunManager:
       try:
         # Provider call with global rate limiting
         await self._rate_limit()
-        candidate_output = await self.provider.generate(input_text)
+        if self.provider_call_timeout is not None:
+          candidate_output = await asyncio.wait_for(
+            self.provider.generate(input_text, **self.generation_params),
+            timeout=self.provider_call_timeout,
+          )
+        else:
+          candidate_output = await self.provider.generate(
+            input_text, **self.generation_params
+          )
 
         # Judge call with global rate limiting
         await self._rate_limit()
-        judge_result = await self.judge.score(
-          input_text=input_text,
-          expected_output=expected_output,
-          candidate_output=candidate_output,
-        )
+        if self.judge_call_timeout is not None:
+          judge_result = await asyncio.wait_for(
+            self.judge.score(
+              input_text=input_text,
+              expected_output=expected_output,
+              candidate_output=candidate_output,
+            ),
+            timeout=self.judge_call_timeout,
+          )
+        else:
+          judge_result = await self.judge.score(
+            input_text=input_text,
+            expected_output=expected_output,
+            candidate_output=candidate_output,
+          )
 
         execution_time = time.time() - start_time
 
