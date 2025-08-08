@@ -356,9 +356,9 @@ satori/
 │   ├── config/          # Configuration management
 │   └── cli.py           # CLI interface
 ├── examples/            # Example datasets
-├── pyproject.toml      # Project configuration
-├── uv.lock             # Locked dependencies
-└── README.md           # This file
+├── pyproject.toml       # Project configuration
+├── uv.lock              # Locked dependencies
+└── README.md            # This file
 ```
 
 ### Adding a New Provider

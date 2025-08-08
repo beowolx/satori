@@ -34,7 +34,7 @@ classifiers = [
 ]
 
 [project.scripts]
-satori = "src.cli:main"
+satori = "satori.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/beowolx/satori"
@@ -42,7 +42,7 @@ Repository = "https://github.com/beowolx/satori"
 Issues = "https://github.com/beowolx/satori/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/satori"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/README.md", "/LICENSE"]
