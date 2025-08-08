@@ -235,35 +235,53 @@ satori config --help
 
 ## Generation Parameters
 
-Satori lets you pass generation parameters from the CLI. These are forwarded to the provider as-is. Some providers/models have different parameter names or constraints.
+Satori lets you pass generation parameters from the CLI and/or set provider defaults in your config. These are forwarded to the provider as-is, with light provider-specific adaptation (e.g., OpenAI `max_tokens` → `max_completion_tokens` for newer models).
 
-Common flags:
+CLI options (precedence: config defaults < `--gen` < explicit flags):
 
 ```bash
-# Temperature (float)
-satori run data.csv --provider openai:gpt-4o --temperature 0.7
-
-# Token limits (OpenAI newer models use max_completion_tokens)
-satori run data.csv --provider openai:gpt-4o --max-completion-tokens 2048
-
-# For older OpenAI models, you can use max-tokens; Satori will adapt when possible
-satori run data.csv --provider openai:gpt-4.1 --max-tokens 2048
+# Convenience flags
+satori run data.csv --provider openai:gpt-4o --temperature 0.7 --max-tokens 2048
 
 # Arbitrary params via --gen key=value (repeatable)
 satori run data.csv --provider huggingface:mistralai/Mistral-7B-Instruct-v0.2 \
   --gen top_p=0.9 --gen stop=END --gen stop=a,b,c
 
-# Lists: comma-separated values are parsed into arrays
+# Lists: comma-separated values are parsed as arrays
 satori run data.csv --provider openai:gpt-4o --gen stop=</s>,<|eot|>
+```
+
+Provider defaults in config (same place as API keys):
+
+```yaml
+providers:
+  openai:
+    api_key: sk-...
+    generation_defaults:
+      temperature: 0.7
+      max_tokens: 2048
+      stop: ["END", "<|eot|>"]
+  anthropic:
+    api_key: sk-ant-...
+    generation_defaults:
+      temperature: 0.5
+      max_tokens: 8192
+```
+
+You can set these with the config CLI using dot-notation:
+
+```bash
+satori config set generation_defaults.temperature 0.4 --provider openai
+satori config set generation_defaults.max_tokens 1024 --provider openai
 ```
 
 Notes:
 
-- Parameters are forwarded to all providers. Provider-specific naming still applies. For example:
-  - OpenAI: some models reject `temperature` values other than default 1; Satori will automatically retry without `temperature` if a 400 indicates an unsupported value.
-  - OpenAI: if a 400 error indicates `max_tokens` is unsupported, Satori remaps to `max_completion_tokens` and retries.
-- For non-OpenAI providers, params are passed through unchanged. Use `--gen` to pass provider-specific options (e.g., `--gen max_new_tokens=512` for HuggingFace text generation, or `--gen stop=a,b`).
-- Because models vary, prefer the provider’s canonical names when known.
+- Parameters are forwarded to providers. Provider-specific naming still applies. Examples:
+  - OpenAI: Satori adapts `max_tokens` to `max_completion_tokens` for models that require it and may retry if an unsupported `temperature` triggers a 400.
+  - HuggingFace: `max_tokens` maps to `max_new_tokens` for text-generation; `stop`/`stop_sequences` are supported.
+  - Anthropic: `stop` maps to `stop_sequences`; `max_tokens` is required.
+- The output JSON/JSONL metadata includes `generation_params` that were used for the run.
 
 ## Output Formats
 

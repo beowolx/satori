@@ -168,19 +168,30 @@ class ConfigManager:
     if provider_name not in current_config["providers"]:
       current_config["providers"][provider_name] = {}
 
-    current_config["providers"][provider_name][key] = value
+    # Support dot-notation for nested keys
+    provider_dict = current_config["providers"][provider_name]
+    if "." in key:
+      self._set_nested(provider_dict, key, value)
+    else:
+      provider_dict[key] = value
+
     self.save_config(current_config)
 
   def set_config(self, key: str, value: Any) -> None:
     """Set a top-level configuration value."""
     current_config = self._load_config_file()
-    current_config[key] = value
+    # Support dot-notation for nested keys at the root
+    if "." in key:
+      self._set_nested(current_config, key, value)
+    else:
+      current_config[key] = value
     self.save_config(current_config)
 
   def get_config_value(self, key: str, default: Any = None) -> Any:
     """Get a specific configuration value."""
-    config = self.get_config()
-    return getattr(config, key, default)
+    # Support dot-notation retrieval by working on a plain dict
+    config_dict = self.get_config().model_dump()
+    return self._get_nested(config_dict, key, default)
 
   def list_config(self) -> Dict[str, Any]:
     """List all configuration values (masking sensitive data)."""
@@ -200,6 +211,36 @@ class ConfigManager:
             masked["providers"][provider]["api_key"] = f"{key[:4]}...{key[-4:]}"
 
     return masked
+
+  # --- Nested helpers ---
+  def _set_nested(
+    self, target: Dict[str, Any], dotted_key: str, value: Any
+  ) -> None:
+    """Set a nested value in a dict given a dot-separated key path."""
+    parts = [p for p in dotted_key.split(".") if p]
+    if not parts:
+      return
+    cursor = target
+    for part in parts[:-1]:
+      if part not in cursor or not isinstance(cursor[part], dict):
+        cursor[part] = {}
+      cursor = cursor[part]
+    cursor[parts[-1]] = value
+
+  def _get_nested(
+    self, source: Dict[str, Any], dotted_key: str, default: Any = None
+  ) -> Any:
+    """Get a nested value from a dict given a dot-separated key path."""
+    if not dotted_key:
+      return default
+    parts = [p for p in dotted_key.split(".") if p]
+    cursor: Any = source
+    for part in parts:
+      if isinstance(cursor, dict) and part in cursor:
+        cursor = cursor[part]
+      else:
+        return default
+    return cursor
 
 
 # Global config manager instance
