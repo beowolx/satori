@@ -13,6 +13,7 @@ from rich.progress import (
   TextColumn,
 )
 from rich.table import Table
+from rich.traceback import install as rich_traceback_install
 
 from .config import get_config
 from .config.cli import config_app
@@ -138,6 +139,9 @@ def run(
     "Capital of France?","Paris"
   """
   try:
+    # Enable rich tracebacks when running in verbose mode
+    if verbose:
+      rich_traceback_install(show_locals=False)
     # Get configuration with CLI args taking precedence
     cli_args = {
       "provider": provider,
@@ -327,10 +331,8 @@ def run(
       console.print(f"\n[red]Error during evaluation: {e}[/red]")
 
     if verbose:
-      import traceback
-
       console.print("\n[dim]Full traceback:[/dim]")
-      console.print(traceback.format_exc())
+      console.print_exception(show_locals=False)
     raise typer.Exit(1)
 
 
