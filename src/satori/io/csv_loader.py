@@ -2,6 +2,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import pandas as pd
+from rich.console import Console
+
+console = Console()
 
 
 class CSVLoader:
@@ -64,7 +67,7 @@ class CSVLoader:
     for col in self.REQUIRED_COLUMNS:
       missing_count = df[col].isna().sum()
       if missing_count > 0:
-        print(
+        console.print(
           f"Warning: Found {missing_count} missing values in column '{col}'"
         )
         df[col] = df[col].fillna("")
@@ -72,7 +75,7 @@ class CSVLoader:
     empty_mask = (df["input"] == "") & (df["expected_output"] == "")
     if empty_mask.any():
       num_removed = empty_mask.sum()
-      print(f"Removing {num_removed} completely empty rows")
+      console.print(f"Removing {num_removed} completely empty rows")
       df = df[~empty_mask]
 
     df = df.reset_index(drop=True)
