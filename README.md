@@ -1,5 +1,5 @@
-![satori](https://github.com/user-attachments/assets/a398618b-9eb1-4631-b1d2-10f4d7f25d2f)
 
+<img width="1536" height="1024" alt="satori_banner" src="https://github.com/user-attachments/assets/83e6c6dd-9915-4c57-bd42-6da83f7af1a5" />
 
 # Satori
 
