@@ -2,7 +2,7 @@
 
 Run your own LLM benchmarks on your data — quickly. Satori is a vendor‑agnostic CLI that scores model outputs using an “LLM‑as‑a‑judge” approach, so you can see how different models perform on your exact prompts.
 
-## Why Satori
+## Features
 
 - Simple: point at a CSV, pick a model, get scores.
 - Fair: uses a judge model (default: GPT‑4.1) to grade outputs.
@@ -13,24 +13,27 @@ Run your own LLM benchmarks on your data — quickly. Satori is a vendor‑agnos
 ## Quick Start
 
 ```bash
-# Install deps (dev)
-uv sync
+# Install
+uv tool install "git+https://github.com/beowolx/satori@v0.1.0"
 
 # Configure keys (interactive)
-uv run satori config init
+satori config init
 
 # Run on the example dataset
-uv run satori run examples/sample_dataset.csv --provider openai:gpt-4o
+satori run examples/sample_dataset.csv --provider openai:gpt-4o
 
 # Save results to a file
-uv run satori run examples/sample_dataset.csv \
+satori run examples/sample_dataset.csv \
   --provider openai:gpt-4o --output results.json
 
 # Compare two runs
-uv run satori compare results_a.json results_b.json
-```
+satori compare results_a.json results_b.json
 
-See `uv run satori --help`, `uv run satori run --help`, and `uv run satori compare --help` for all options.
+# Help
+satori --help
+satori run --help
+satori compare --help
+```
 
 ## Dataset Format
 
@@ -45,7 +48,7 @@ input,expected_output
 Use custom column names with `--input-col` and `--expected-col`:
 
 ```bash
-uv run satori run my_data.csv \
+satori run my_data.csv \
   --provider openai:gpt-4o \
   --input-col question \
   --expected-col answer
@@ -59,19 +62,20 @@ uv run satori run my_data.csv \
 - You can switch the judge (e.g., `--judge-model anthropic:claude-3-5-sonnet-20241022`).
 
 Notes and caveats:
+
 - Judge models can be biased; treat scores as guidance, not ground truth.
 - For subjective tasks, include a clear rubric in your `expected_output` or prompt.
 
 ## Providers & Keys
 
-- Configure credentials via `uv run satori config init` or environment variables like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.
+- Configure credentials via `satori config init` or environment variables like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.
 - Provider strings follow `provider:model` (e.g., `openai:gpt-4o`, `anthropic:claude-3-5-sonnet-20241022`).
-- List available providers: `uv run satori list-providers`.
+- List available providers: `satori list-providers`.
 
 ## Outputs & Comparison
 
 - Results: CSV, JSON, or JSONL via `--output`.
-- Compare two runs: `uv run satori compare <file_a> <file_b>`
+- Compare two runs: `satori compare <file_a> <file_b>`
   - Joins by `--key-col` (default: `input`) and shows deltas
   - Optional `--pass-threshold` to compute accuracy
 
