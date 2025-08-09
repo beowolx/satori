@@ -1,405 +1,74 @@
 # Satori
 
-A vendor-agnostic CLI tool for evaluating LLM responses using an "LLM-as-a-Judge" approach. Compare outputs from different language models (OpenAI, Anthropic, Ollama, etc.) against expected responses with automated scoring.
+Run your own LLM benchmarks on your data — quickly. Satori is a vendor‑agnostic CLI that scores model outputs using an “LLM‑as‑a‑judge” approach, so you can see how different models perform on your exact prompts.
 
-## Features
+## Why Satori
 
-- **Multi-Provider Support**: Evaluate responses from Mistral, OpenAI, Anthropic, Google Gemini, OpenRouter, Ollama (local), HuggingFace, and more.
-- **LLM-as-Judge**: Uses GPT-4.1 (or other models) to score responses automatically.
-- **Flexible Configuration**: Manage settings via CLI commands, environment variables, or a config file (`~/.config/satori/config.yaml`).
-- **Comprehensive Metrics**: Get detailed statistics including mean, median, and score distribution.
-- **Async Processing**: Fast, concurrent evaluation with configurable rate limiting.
-- **Multiple Output Formats**: Save results as CSV, JSON, or JSONL.
-- **Local Model Support**: Evaluate local models via Ollama.
-
-## Table of Contents
-
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Dataset Format](#dataset-format)
-- [Supported Providers](#supported-providers)
-- [Usage Examples](#usage-examples)
-- [Generation Parameters](#generation-parameters)
-- [Output Formats](#output-formats)
-- [Scoring System](#scoring-system)
-- [Development](#development)
-
-## Installation
-
-### Via Homebrew (Recommended)
-
-```bash
-brew install satori
-```
-
-### From Source (Development)
-
-Clone the repository and install using [uv](https://docs.astral.sh/uv/):
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/satori.git
-cd satori
-
-# Install dependencies using uv
-uv sync
-
-# Run the CLI tool in development mode
-uv run satori --help
-```
-
-_Requires Python 3.12 or higher._
+- Simple: point at a CSV, pick a model, get scores.
+- Fair: uses a judge model (default: GPT‑4.1) to grade outputs.
+- Flexible: works with OpenAI, Anthropic, Google, OpenRouter, HuggingFace, Ollama (local), and more.
+- Fast: async processing with progress, ETA, and throughput.
+- Portable: save results as CSV/JSON/JSONL and compare runs.
 
 ## Quick Start
 
-1.  **Initialize Satori:**
-    This command starts an interactive wizard to help you configure API keys and set default models.
-
-    ```bash
-    satori config init
-    ```
-
-2.  **Run an evaluation:**
-    Use the `run` command with a dataset file and a provider.
-
-    ```bash
-    satori run examples/sample_dataset.csv --provider openai:gpt-4o
-    ```
-
-3.  **View results:**
-    A summary table is displayed in the terminal. To save results to a file:
-
-    ```bash
-    satori run examples/sample_dataset.csv --provider openai:gpt-4o --output results.json
-    ```
-
-## Configuration
-
-Satori uses a flexible, three-tier configuration system that prioritizes settings in the following order:
-
-1.  **Command-line arguments** (highest priority)
-2.  **Environment variables**
-3.  **User config file** (`~/.config/satori/config.yaml`, lowest priority)
-
-This system allows you to set global defaults and override them for specific commands.
-
-### Configuration Commands
-
-Manage your settings easily with the `satori config` command:
-
-| Command                           | Description                                                                  |
-| --------------------------------- | ---------------------------------------------------------------------------- |
-| `satori config init`              | Runs an interactive setup wizard to configure API keys and defaults.         |
-| `satori config set <key> <value>` | Sets a configuration value. Use `--provider` for provider-specific settings. |
-| `satori config get [key]`         | Retrieves a specific key or all configuration values.                        |
-| `satori config list`              | Lists all configuration, automatically masking API keys.                     |
-| `satori config path`              | Shows the location of the configuration file.                                |
-
-**Examples:**
-
 ```bash
-# Start the interactive setup
-satori config init
+# Install deps (dev)
+uv sync
 
-# Set API keys for different providers
-satori config set api_key "sk-..." --provider openai
-satori config set api_key "sk-ant-..." --provider anthropic
+# Configure keys (interactive)
+uv run satori config init
 
-# Set a default provider and judge model
-satori config set default_provider "anthropic:claude-3-5-sonnet-20241022"
-satori config set default_judge "openai:gpt-4o"
+# Run on the example dataset
+uv run satori run examples/sample_dataset.csv --provider openai:gpt-4o
 
-# Get a specific value
-satori config get default_provider
+# Save results to a file
+uv run satori run examples/sample_dataset.csv \
+  --provider openai:gpt-4o --output results.json
 
-# List all current settings
-satori config list
+# Compare two runs
+uv run satori compare results_a.json results_b.json
 ```
 
-### Environment Variables
-
-You can also configure Satori using environment variables. These will override settings from the config file.
-
-- **API Keys**: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.
-- **Defaults**: `SATORI_DEFAULT_PROVIDER`, `SATORI_DEFAULT_JUDGE`
-- **Performance**: `SATORI_CONCURRENCY`, `SATORI_RATE_LIMIT`
-
-### Command-Line Arguments
-
-For maximum flexibility, you can override any setting on a per-command basis using command-line arguments.
-
-```bash
-# Run with defaults saved in your config (e.g. provider is set)
-satori run data.csv
-
-# Override the provider and judge for a single run
-satori run data.csv --provider openai:gpt-4o --judge-model google:gemini-1.5-pro
-```
+See `uv run satori --help`, `uv run satori run --help`, and `uv run satori compare --help` for all options.
 
 ## Dataset Format
 
-Satori expects a CSV file with the following required columns:
-
-| Column            | Description                            |
-| ----------------- | -------------------------------------- |
-| `input`           | The prompt/question to send to the LLM |
-| `expected_output` | The reference answer for comparison    |
-
-### Example Dataset
+Satori expects a CSV with two columns:
 
 ```csv
 input,expected_output
-"What is the capital of France?","The capital of France is Paris."
-"Explain photosynthesis in simple terms.","Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar."
+"What is the capital of France?","Paris"
+"Explain photosynthesis in simple terms.","Plants use sunlight to make energy."
 ```
 
-## Supported Providers
+## How It Scores (LLM‑as‑a‑Judge)
 
-| Provider    | Type           | Example Models                                | API Key Required |
-| ----------- | -------------- | --------------------------------------------- | ---------------- |
-| OpenAI      | Cloud          | GPT-4.1, GPT-4o                               | Yes              |
-| Anthropic   | Cloud          | Claude 4 Sonnet, Claude 3 Opus                | Yes              |
-| Google      | Cloud          | Gemini 2.5, Gemini 2.5 Flash                  | Yes              |
-| HuggingFace | Cloud          | Llama 4, Mistral, Falcon, FLAN-T5, Qwen, etc. | Optional\*       |
-| OpenRouter  | Cloud (Router) | 100+ models from various providers            | Yes              |
-| Ollama      | Local          | Llama 3, Mistral, CodeLlama                   | No               |
+- For each row, Satori asks a candidate model to answer `input`.
+- A judge model compares the answer to `expected_output` and assigns a score (0–5) with a short explanation.
+- Summary statistics (mean, median, std), success/failure counts, and timing are reported.
+- You can switch the judge (e.g., `--judge-model anthropic:claude-3-5-sonnet-20241022`).
 
-\*HuggingFace API key is optional for public models but recommended for higher rate limits.
+Notes and caveats:
+- Judge models can be biased; treat scores as guidance, not ground truth.
+- For subjective tasks, include a clear rubric in your `expected_output` or prompt.
 
-## Usage Examples
+## Providers & Keys
 
-### Basic Evaluation
+- Configure credentials via `uv run satori config init` or environment variables like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.
+- Provider strings follow `provider:model` (e.g., `openai:gpt-4o`, `anthropic:claude-3-5-sonnet-20241022`).
+- List available providers: `uv run satori list-providers`.
 
-```bash
-# Evaluate with a specific provider (if no default is set)
-satori run data.csv --provider openai:gpt-4.1
-```
+## Outputs & Comparison
 
-### Custom Judge Model
+- Results: CSV, JSON, or JSONL via `--output`.
+- Compare two runs: `uv run satori compare <file_a> <file_b>`
+  - Joins by `--key-col` (default: `input`) and shows deltas
+  - Optional `--pass-threshold` to compute accuracy
 
-```bash
-# OpenAI judge (native)
-satori run data.csv --provider openai:gpt-4.1 --judge-model openai:gpt-4o
+## Contributing & License
 
-# Judge via other providers (provider-agnostic)
-satori run data.csv --provider ollama:llama2 --judge-model anthropic:claude-3-5-sonnet-20241022
+- Dev loop: `uv sync` → `uv run satori …`
+- Lint/format: `uv run ruff check .` and `uv run ruff format .`
+- License: MIT
 
-# Bare model falls back to default provider from config
-satori run data.csv --provider google:gemini-1.5-pro --judge-model gpt-4.1
-```
-
-### Save Results
-
-```bash
-# Save as CSV
-satori run data.csv --provider openai:gpt-4.1 --output results.csv
-
-# Save as JSON
-satori run data.csv --provider openai:gpt-4.1 --output results.json
-```
-
-### Performance / Timeouts
-
-```bash
-# Increase provider timeout for complex prompts (seconds)
-satori run data.csv --provider openai:gpt-4.1 --provider-timeout 240
-
-# Adjust concurrency (default: 5) and rate limiting
-satori run data.csv --provider openai:gpt-4.1 --concurrency 3 --rate-limit-delay 0.5
-```
-
-### Compare Multiple Providers
-
-```bash
-satori run data.csv --provider openai:gpt-4.1 --output gpt4_results.json
-satori run data.csv --provider anthropic:claude-3-5-sonnet-20241022 --output claude_results.json
-satori run data.csv --provider google:gemini-1.5-pro --output gemini_results.json
-```
-
-## Commands
-
-### List Available Providers
-
-```bash
-satori list-providers
-```
-
-### Show Version
-
-```bash
-satori version
-```
-
-### Get Help
-
-```bash
-satori --help
-satori run --help
-satori config --help
-```
-
-## Generation Parameters
-
-Satori lets you pass generation parameters from the CLI and/or set provider defaults in your config. These are forwarded to the provider as-is, with light provider-specific adaptation (e.g., OpenAI `max_tokens` → `max_completion_tokens` for newer models).
-
-CLI options (precedence: config defaults < `--gen` < explicit flags):
-
-```bash
-# Convenience flags
-satori run data.csv --provider openai:gpt-4o --temperature 0.7 --max-tokens 2048
-
-# Arbitrary params via --gen key=value (repeatable)
-satori run data.csv --provider huggingface:mistralai/Mistral-7B-Instruct-v0.2 \
-  --gen top_p=0.9 --gen stop=END --gen stop=a,b,c
-
-# Lists: comma-separated values are parsed as arrays
-satori run data.csv --provider openai:gpt-4o --gen stop=</s>,<|eot|>
-```
-
-Provider defaults in config (same place as API keys):
-
-```yaml
-providers:
-  openai:
-    api_key: sk-...
-    generation_defaults:
-      temperature: 0.7
-      max_tokens: 2048
-      stop: ["END", "<|eot|>"]
-  anthropic:
-    api_key: sk-ant-...
-    generation_defaults:
-      temperature: 0.5
-      max_tokens: 8192
-```
-
-You can set these with the config CLI using dot-notation:
-
-```bash
-satori config set generation_defaults.temperature 0.4 --provider openai
-satori config set generation_defaults.max_tokens 1024 --provider openai
-```
-
-Notes:
-
-- Parameters are forwarded to providers. Provider-specific naming still applies. Examples:
-  - OpenAI: Satori adapts `max_tokens` to `max_completion_tokens` for models that require it and may retry if an unsupported `temperature` triggers a 400.
-  - HuggingFace: `max_tokens` maps to `max_new_tokens` for text-generation; `stop`/`stop_sequences` are supported.
-  - Anthropic: `stop` maps to `stop_sequences`; `max_tokens` is required.
-- The output JSON/JSONL metadata includes `generation_params` that were used for the run.
-
-## Output Formats
-
-### CSV Format
-
-```csv
-input,expected,candidate,score,explanation,provider,judge,execution_time,error,timestamp
-"What is 2+2?","4","4",5.0,"Perfect answer","OpenAIProvider(model='gpt-4.1')","OpenAIJudge(model='gpt-4.1')",0.52,"","2024-01-15T10:30:00"
-```
-
-### JSON Format
-
-```json
-{
-  "metadata": { ... },
-  "statistics": { ... },
-  "results": [ ... ]
-}
-```
-
-## Scoring System
-
-The judge uses a 0-5 integer scale:
-
-| Score | Description                                     |
-| ----- | ----------------------------------------------- |
-| **5** | Fully correct, comprehensive, and well-reasoned |
-| **4** | Almost perfect with minor issues                |
-| **3** | Mostly correct with some notable issues         |
-| **2** | Partially correct but missing key information   |
-| **1** | Substantially incorrect with major errors       |
-| **0** | Completely wrong, off-topic, or harmful         |
-
-## Troubleshooting
-
-**"Provider Error: Invalid API key"**
-
-- Run `satori config init` to check and re-enter your API keys.
-- You can also set keys directly: `satori config set api_key "sk-..." --provider openai`.
-
-**"Failed to connect to Ollama"**
-
-- Make sure Ollama is running: `ollama serve`.
-- Check if Ollama is accessible at `http://localhost:11434`.
-
-**"Model not found"**
-
-- For Ollama: Pull the model first with `ollama pull model-name`.
-- For cloud providers, check the model name is correct.
-
-**Rate Limiting Errors**
-
-- Increase `--rate-limit-delay` parameter.
-- Reduce `--concurrency` parameter.
-
-## Development
-
-### Setup
-
-1. **Clone the repository:**
-
-   ```bash
-   git clone https://github.com/yourusername/satori.git
-   cd satori
-   ```
-
-2. **Install dependencies using uv:**
-
-   ```bash
-   uv sync
-   ```
-
-3. **Run the CLI in development mode:**
-   ```bash
-   # All commands should be prefixed with 'uv run' during development
-   uv run satori --help
-   uv run satori config init
-   uv run satori run examples/sample_dataset.csv --provider openai:gpt-4o
-   ```
-
-### Project Structure
-
-```
-satori/
-├── src/satori/
-│   ├── providers/       # LLM provider implementations
-│   ├── judges/          # Judge implementations
-│   ├── core/            # Core logic (run manager, retry)
-│   ├── io/              # Data loading and result writing
-│   ├── config/          # Configuration management
-│   └── cli.py           # CLI interface
-├── examples/            # Example datasets
-├── pyproject.toml       # Project configuration
-├── uv.lock              # Locked dependencies
-└── README.md            # This file
-```
-
-### Adding a New Provider
-
-1. Create a new provider class in `src/satori/providers/`
-2. Inherit from `BaseLLMProvider`
-3. Implement the `generate()` method
-4. Update the provider factory in `src/satori/providers/factory.py`
-
-## License
-
-MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub.
