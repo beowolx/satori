@@ -166,6 +166,36 @@ def run(
       else config.rate_limit_delay
     )
 
+    # Validate provider string early and fail with helpful info
+    if not ProviderFactory.validate_provider_string(str(actual_provider)):
+      available_providers = ProviderFactory.list_providers()
+      aliases_map = ProviderFactory.list_aliases()
+
+      provider_aliases: Dict[str, List[str]] = {}
+      for alias, prov in aliases_map.items():
+        provider_aliases.setdefault(prov, []).append(alias)
+
+      table = Table(title="Valid Providers")
+      table.add_column("Provider", style="cyan")
+      table.add_column("Aliases", style="blue")
+      for prov in available_providers:
+        alias_str = ", ".join(sorted(provider_aliases.get(prov, []))) or "-"
+        table.add_row(prov, alias_str)
+
+      console.print(
+        Panel.fit(
+          (
+            f"Invalid provider string: [red]{actual_provider}[/red]\n"
+            "Expected format: 'provider:model' (e.g., openai:gpt-4o).\n"
+            "Use 'satori list-providers' to discover options."
+          ),
+          title="Provider Validation Failed",
+          border_style="red",
+        )
+      )
+      console.print(table)
+      raise typer.Exit(1)
+
     console.print(
       Panel.fit(
         "[bold cyan]Satori LLM Evaluation[/bold cyan]\n"

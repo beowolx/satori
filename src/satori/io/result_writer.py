@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import pandas as pd
+from rich.console import Console
 
 from ..core.run_manager import BatchResults
+
+console = Console()
 
 
 class ResultWriter:
@@ -70,10 +73,10 @@ class ResultWriter:
 
       # Save to CSV
       df.to_csv(self.output_path, index=False)
-      print(f"Results saved to {self.output_path}")
+      console.print(f"Results saved to {self.output_path}")
     else:
       # Print to console
-      print("\n" + df.to_string())
+      console.print("\n" + df.to_string())
 
   def write_json(self, batch_results: BatchResults) -> None:
     """Write results to JSON format.
@@ -106,10 +109,10 @@ class ResultWriter:
       # Save to JSON
       with open(self.output_path, "w") as f:
         json.dump(output_data, f, indent=2, default=str)
-      print(f"Results saved to {self.output_path}")
+      console.print(f"Results saved to {self.output_path}")
     else:
       # Print to console
-      print(json.dumps(output_data, indent=2, default=str))
+      console.print(json.dumps(output_data, indent=2, default=str))
 
   def write_jsonl(self, batch_results: BatchResults) -> None:
     """Write results to JSONL (JSON Lines) format.
@@ -143,7 +146,7 @@ class ResultWriter:
           result_data = {"type": "result", **result.to_dict()}
           f.write(json.dumps(result_data, default=str) + "\n")
 
-      print(f"Results saved to {self.output_path}")
+      console.print(f"Results saved to {self.output_path}")
     else:
       # Print to console
       metadata = {
@@ -156,11 +159,11 @@ class ResultWriter:
         "std_deviation": batch_results.std_score,
         "total_time": batch_results.total_time,
       }
-      print(json.dumps(metadata, default=str))
+      console.print(json.dumps(metadata, default=str))
 
       for result in batch_results.results:
         result_data = {"type": "result", **result.to_dict()}
-        print(json.dumps(result_data, default=str))
+        console.print(json.dumps(result_data, default=str))
 
   def print_summary(self, batch_results: BatchResults) -> None:
     """Print a summary of the results to console.
@@ -168,25 +171,25 @@ class ResultWriter:
     Args:
         batch_results: The batch results to summarize
     """
-    print("\n" + "=" * 60)
-    print("EVALUATION SUMMARY")
-    print("=" * 60)
+    console.print("\n" + "=" * 60)
+    console.print("EVALUATION SUMMARY")
+    console.print("=" * 60)
 
-    print(f"\nTotal test cases: {len(batch_results.results)}")
-    print(f"Successful: {batch_results.success_count}")
-    print(f"Failed: {batch_results.failure_count}")
-    print(
+    console.print(f"\nTotal test cases: {len(batch_results.results)}")
+    console.print(f"Successful: {batch_results.success_count}")
+    console.print(f"Failed: {batch_results.failure_count}")
+    console.print(
       f"Success rate: {(batch_results.success_count / len(batch_results.results) * 100):.1f}%"
     )
 
-    print("\nScore Statistics:")
-    print(f"  Average: {batch_results.average_score:.2f}")
-    print(f"  Median: {batch_results.median_score:.2f}")
-    print(f"  Std Dev: {batch_results.std_score:.2f}")
+    console.print("\nScore Statistics:")
+    console.print(f"  Average: {batch_results.average_score:.2f}")
+    console.print(f"  Median: {batch_results.median_score:.2f}")
+    console.print(f"  Std Dev: {batch_results.std_score:.2f}")
 
     # Score distribution
     distribution = self._calculate_score_distribution(batch_results)
-    print("\nScore Distribution:")
+    console.print("\nScore Distribution:")
     for score, count in distribution.items():
       percentage = (
         (count / batch_results.success_count * 100)
@@ -194,15 +197,15 @@ class ResultWriter:
         else 0
       )
       bar = "█" * int(percentage / 2)  # Scale to 50 chars max
-      print(f"  Score {score}: {bar} {count} ({percentage:.1f}%)")
+      console.print(f"  Score {score}: {bar} {count} ({percentage:.1f}%)")
 
-    print(f"\nTotal execution time: {batch_results.total_time:.2f} seconds")
+    console.print(f"\nTotal execution time: {batch_results.total_time:.2f} seconds")
     avg_time = (
       batch_results.total_time / len(batch_results.results)
       if batch_results.results
       else 0
     )
-    print(f"Average time per case: {avg_time:.2f} seconds")
+    console.print(f"Average time per case: {avg_time:.2f} seconds")
 
     # Show worst performing cases
     if batch_results.success_count > 0:
@@ -212,17 +215,17 @@ class ResultWriter:
       )[:3]
 
       if worst_cases:
-        print("\nLowest Scoring Cases:")
+        console.print("\nLowest Scoring Cases:")
         for i, result in enumerate(worst_cases, 1):
-          print(f"\n  {i}. Score: {result.score}")
-          print(
+          console.print(f"\n  {i}. Score: {result.score}")
+          console.print(
             f"     Input: {result.input_text[:100]}{'...' if len(result.input_text) > 100 else ''}"
           )
-          print(
+          console.print(
             f"     Explanation: {result.explanation[:150]}{'...' if len(result.explanation) > 150 else ''}"
           )
 
-    print("\n" + "=" * 60)
+    console.print("\n" + "=" * 60)
 
   def _calculate_score_distribution(
     self, batch_results: BatchResults
@@ -329,4 +332,4 @@ class ResultWriter:
     report_file = Path(report_path)
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text(html_content)
-    print(f"Detailed HTML report saved to {report_path}")
+    console.print(f"Detailed HTML report saved to {report_path}")
