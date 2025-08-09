@@ -8,11 +8,20 @@ console = Console()
 
 
 class CSVLoader:
-  """Load and validate CSV datasets for LLM evaluation."""
+  """Load and validate CSV datasets for LLM evaluation.
 
-  REQUIRED_COLUMNS = ["input", "expected_output"]
+  By default expects columns named "input" and "expected_output" but can be
+  configured to read any column names via constructor parameters. Internally,
+  the loader normalizes to canonical column names "input" and
+  "expected_output" so downstream code remains unchanged.
+  """
 
-  def __init__(self, file_path: str):
+  def __init__(
+    self,
+    file_path: str,
+    input_col: str = "input",
+    expected_col: str = "expected_output",
+  ):
     """Initialize CSV loader with file path.
 
     Args:
@@ -25,6 +34,8 @@ class CSVLoader:
     if not self.file_path.exists():
       raise FileNotFoundError(f"CSV file not found: {file_path}")
 
+    self._input_col = input_col
+    self._expected_col = expected_col
     self.df: Optional[pd.DataFrame] = None
 
   def load(self) -> pd.DataFrame:
@@ -41,16 +52,26 @@ class CSVLoader:
     except Exception as e:
       raise ValueError(f"Failed to read CSV file: {str(e)}")
 
-    missing_columns = set(self.REQUIRED_COLUMNS) - set(self.df.columns)
+    required = [self._input_col, self._expected_col]
+    missing_columns = [c for c in required if c not in self.df.columns]
     if missing_columns:
       raise ValueError(
-        f"Missing required columns: {', '.join(missing_columns)}. "
-        f"Required columns are: {', '.join(self.REQUIRED_COLUMNS)}"
+        "Missing required columns: "
+        + ", ".join(missing_columns)
+        + ". Available columns: "
+        + ", ".join(map(str, self.df.columns))
       )
+
+    # Normalize to canonical names used throughout the pipeline
+    rename_map = {
+      self._input_col: "input",
+      self._expected_col: "expected_output",
+    }
+    self.df = self.df.rename(columns=rename_map)
 
     self.df = self._handle_missing_data(self.df)
 
-    for col in self.REQUIRED_COLUMNS:
+    for col in ("input", "expected_output"):
       self.df[col] = self.df[col].astype(str)
 
     return self.df
@@ -64,7 +85,7 @@ class CSVLoader:
     Returns:
         DataFrame with missing data handled
     """
-    for col in self.REQUIRED_COLUMNS:
+    for col in ("input", "expected_output"):
       missing_count = df[col].isna().sum()
       if missing_count > 0:
         console.print(
