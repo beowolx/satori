@@ -1,3 +1,6 @@
+![satori](https://github.com/user-attachments/assets/a398618b-9eb1-4631-b1d2-10f4d7f25d2f)
+
+
 # Satori
 
 Run your own LLM benchmarks on your data — quickly. Satori is a vendor‑agnostic CLI that scores model outputs using an “LLM‑as‑a‑judge” approach, so you can see how different models perform on your exact prompts.
