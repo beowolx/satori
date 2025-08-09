@@ -17,7 +17,6 @@ dependencies = [
     "pandas>=2.3.1",
     "pydantic>=2.11.7",
     "rich>=14.1.0",
-    "ruff>=0.12.7",
     "typer>=0.16.0",
     "tenacity>=9.0.0",
     "pyyaml>=6.0.2",
@@ -46,6 +45,13 @@ packages = ["src/satori"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/README.md", "/LICENSE"]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.12.7",
+  "build>=1.2.2.post1",
+  "twine>=5.1.1",
+]
 
 [tool.ruff]
 line-length = 80

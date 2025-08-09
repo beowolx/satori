@@ -120,6 +120,16 @@ def run(
     "-v",
     help="Show detailed progress and error information during evaluation",
   ),
+  input_col: str = typer.Option(
+    "input",
+    "--input-col",
+    help="Name of the column containing the input prompt/question",
+  ),
+  expected_col: str = typer.Option(
+    "expected_output",
+    "--expected-col",
+    help="Name of the column containing the expected/reference output",
+  ),
 ):
   """Run LLM evaluation on a dataset using the LLM-as-a-Judge approach.
 
@@ -203,7 +213,8 @@ def run(
         "[bold cyan]Satori LLM Evaluation[/bold cyan]\n"
         f"Provider: [green]{actual_provider}[/green]\n"
         f"Judge: [green]{actual_judge}[/green]\n"
-        f"Dataset: [yellow]{data}[/yellow]",
+        f"Dataset: [yellow]{data}[/yellow]\n"
+        f"Columns: input=[cyan]{input_col}[/cyan], expected=[cyan]{expected_col}[/cyan]",
         title="Configuration",
       )
     )
@@ -264,7 +275,7 @@ def run(
     console.print("\n[bold]Starting evaluation...[/bold]")
     from .io.csv_loader import CSVLoader
 
-    loader = CSVLoader(str(data))
+    loader = CSVLoader(str(data), input_col=input_col, expected_col=expected_col)
     loader.load()
     total_cases = len(loader)
 
@@ -308,7 +319,7 @@ def run(
 
       batch_results = asyncio.run(
         run_manager.run_batch(
-          csv_path=str(data),
+          test_cases=loader.get_rows(),
           progress_callback=update_progress,
         )
       )

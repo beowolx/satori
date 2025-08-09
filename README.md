@@ -34,12 +34,21 @@ See `uv run satori --help`, `uv run satori run --help`, and `uv run satori compa
 
 ## Dataset Format
 
-Satori expects a CSV with two columns:
+Satori expects a CSV with two columns (defaults shown):
 
 ```csv
 input,expected_output
 "What is the capital of France?","Paris"
 "Explain photosynthesis in simple terms.","Plants use sunlight to make energy."
+```
+
+Use custom column names with `--input-col` and `--expected-col`:
+
+```bash
+uv run satori run my_data.csv \
+  --provider openai:gpt-4o \
+  --input-col question \
+  --expected-col answer
 ```
 
 ## How It Scores (LLM‑as‑a‑Judge)
@@ -71,4 +80,3 @@ Notes and caveats:
 - Dev loop: `uv sync` → `uv run satori …`
 - Lint/format: `uv run ruff check .` and `uv run ruff format .`
 - License: MIT
-
