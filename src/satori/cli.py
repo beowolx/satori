@@ -1,7 +1,9 @@
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -527,3 +529,331 @@ def _parse_gen_list(items: List[str]) -> Dict[str, Any]:
 
     parsed[key] = value
   return parsed
+
+
+@app.command()
+def compare(
+  file_a: Path = typer.Argument(
+    ..., help="First results file (CSV, JSON, JSONL)"
+  ),
+  file_b: Path = typer.Argument(
+    ..., help="Second results file (CSV, JSON, JSONL)"
+  ),
+  key_col: str = typer.Option(
+    "input",
+    "--key-col",
+    "-k",
+    help="Column to join on (default: input)",
+  ),
+  pass_threshold: Optional[float] = typer.Option(
+    None,
+    "--pass-threshold",
+    "-t",
+    help="Threshold for accuracy metric (score >= threshold)",
+  ),
+  top_n: int = typer.Option(10, "--top-n", "-n", help="Top N to show"),
+  output: Optional[Path] = typer.Option(
+    None,
+    "--output",
+    "-o",
+    help="Optional output file (.json or .csv)",
+  ),
+):
+  """Compare two result files and show metric deltas and top changes."""
+
+  # Normalize threshold for internal use (handles Typer's OptionInfo if called programmatically)
+  _threshold: Optional[float]
+  if isinstance(pass_threshold, (int, float)):
+    _threshold = float(pass_threshold)
+  else:
+    _threshold = None
+
+  # Normalize top_n when called directly (Typer OptionInfo otherwise)
+  try:
+    _top_n = int(top_n)  # type: ignore[arg-type]
+  except Exception:
+    _top_n = int(getattr(top_n, "default", 10))
+
+  # Normalize key column when called directly
+  _key_col: str
+  if isinstance(key_col, str):
+    _key_col = key_col
+  else:
+    _key_col = str(getattr(key_col, "default", "input"))
+
+  # Normalize output when called directly
+  _output: Optional[Path] = output if isinstance(output, Path) else None
+
+  def _load_results_file(path: Path) -> pd.DataFrame:
+    p = str(path)
+    if p.endswith(".csv"):
+      df = pd.read_csv(path)
+    elif p.endswith(".json"):
+      import json
+
+      with open(path, "r") as f:
+        data = json.load(f)
+      if isinstance(data, dict):
+        if "results" in data and isinstance(data["results"], list):
+          df = pd.DataFrame(data["results"])
+        else:
+          # Fallback if unknown dict structure
+          df = pd.DataFrame([data])
+      elif isinstance(data, list):
+        df = pd.DataFrame(data)
+      else:
+        df = pd.DataFrame()
+    elif p.endswith(".jsonl") or p.endswith(".ndjson"):
+      import json
+
+      rows: List[Dict[str, Any]] = []
+      with open(path, "r") as f:
+        for line in f:
+          line = line.strip()
+          if not line:
+            continue
+          try:
+            obj = json.loads(line)
+          except Exception:
+            continue
+          if isinstance(obj, dict):
+            if obj.get("type") == "result":
+              rows.append({k: v for k, v in obj.items() if k != "type"})
+            elif "score" in obj or key_col in obj:
+              rows.append(obj)
+      df = pd.DataFrame(rows)
+    else:
+      raise typer.BadParameter(
+        f"Unsupported file type: {path}. Use .csv, .json, or .jsonl"
+      )
+
+    # Normalize column names expected by writer: input, score, error
+    # Some CSVs may use 'expected'/'candidate' but we only need input/score/error
+    # Coerce score to numeric
+    if "score" in df.columns:
+      df["score"] = pd.to_numeric(df["score"], errors="coerce")
+    if _key_col not in df.columns and "input" in df.columns and _key_col != "input":
+      # Provide a fallback when caller specifies a different key
+      df[_key_col] = df["input"]
+    return df
+
+  def _valid_rows(df: pd.DataFrame) -> pd.DataFrame:
+    d = df.copy()
+    # Exclude rows with explicit error messages if present
+    if "error" in d.columns:
+      d = d[(d["error"].isna()) | (d["error"] == "")]
+    # Keep rows with numeric scores
+    if "score" in d.columns:
+      d = d[d["score"].notna()]
+    return d
+
+  def _metrics(df: pd.DataFrame) -> Dict[str, Any]:
+    if df.empty or "score" not in df.columns:
+      return {
+        "avg": 0.0,
+        "median": 0.0,
+        "std": 0.0,
+        "accuracy": None if _threshold is None else 0.0,
+        "n": 0,
+      }
+    scores = df["score"].astype(float)
+    avg = float(scores.mean()) if not scores.empty else 0.0
+    median = float(scores.median()) if not scores.empty else 0.0
+    std = float(scores.std(ddof=1)) if scores.size >= 2 else 0.0
+    acc: Optional[float]
+    if _threshold is None:
+      acc = None
+    else:
+      acc = float((scores >= _threshold).mean()) if scores.size else 0.0
+    return {"avg": avg, "median": median, "std": std, "accuracy": acc, "n": int(scores.size)}
+
+  # Load files
+  try:
+    df_a = _load_results_file(file_a)
+    df_b = _load_results_file(file_b)
+  except Exception as e:
+    console.print(f"[red]Failed to load files: {e}[/red]")
+    raise typer.Exit(1)
+
+  total_a = len(df_a)
+  total_b = len(df_b)
+  valid_a = _valid_rows(df_a)
+  valid_b = _valid_rows(df_b)
+
+  # Inner join on key
+  if _key_col not in valid_a.columns or _key_col not in valid_b.columns:
+    console.print(
+      Panel.fit(
+        (
+          f"Key column '[yellow]{_key_col}[/yellow]' not found in both files."\
+          " Available columns:\n"\
+          f"A: {list(valid_a.columns)}\nB: {list(valid_b.columns)}"
+        ),
+        title="Join Error",
+        border_style="red",
+      )
+    )
+    raise typer.Exit(1)
+
+  joined = valid_a[[_key_col, "score"]].merge(
+    valid_b[[_key_col, "score"]], on=_key_col, suffixes=("_a", "_b"), how="inner"
+  )
+  joined = joined.rename(columns={_key_col: "key"})
+  joined["delta"] = joined["score_b"] - joined["score_a"]
+
+  # Metrics
+  m_a = _metrics(valid_a)
+  m_b = _metrics(valid_b)
+
+  # Summary table
+  summary = Table(title="Comparison Summary")
+  summary.add_column("Metric", style="cyan")
+  summary.add_column("A", style="green")
+  summary.add_column("B", style="magenta")
+  summary.add_column("Δ (B - A)", style="yellow")
+
+  def fmt(x: Optional[float]) -> str:
+    if x is None:
+      return "-"
+    return f"{x:.3f}"
+
+  summary.add_row("Total rows", str(total_a), str(total_b), "-")
+  summary.add_row("Valid rows", str(m_a["n"]), str(m_b["n"]), "-")
+  summary.add_row("Compared rows", str(len(joined)), "-", "-")
+  summary.add_row("Average", fmt(m_a["avg"]), fmt(m_b["avg"]), fmt(m_b["avg"] - m_a["avg"]))
+  summary.add_row("Median", fmt(m_a["median"]), fmt(m_b["median"]), fmt(m_b["median"] - m_a["median"]))
+  summary.add_row("Std dev", fmt(m_a["std"]), fmt(m_b["std"]), fmt(m_b["std"] - m_a["std"]))
+  if _threshold is not None:
+    acc_a = m_a["accuracy"] or 0.0
+    acc_b = m_b["accuracy"] or 0.0
+    summary.add_row(
+      f"Accuracy (≥ {_threshold})",
+      fmt(acc_a),
+      fmt(acc_b),
+      fmt(acc_b - acc_a),
+    )
+
+  console.print(summary)
+
+  # Top changes tables
+  if not joined.empty:
+    def _truncate(s: Any, n: int = 80) -> str:
+      txt = str(s) if s is not None else ""
+      return txt if len(txt) <= n else txt[:n] + "..."
+
+    # Re-merge for showing inputs in top lists
+    # Build a minimal right dataframe with unique columns for merge
+    if "input" in df_a.columns:
+      cols = [_key_col]
+      if _key_col != "input":
+        cols.append("input")
+      right_df = df_a[cols].drop_duplicates(subset=[_key_col])
+    else:
+      right_df = df_a[[_key_col]].assign(input=df_a[_key_col])
+
+    show_df = joined.merge(
+      right_df,
+      left_on="key",
+      right_on=_key_col,
+      how="left",
+      suffixes=(None, None),
+    )
+    if _key_col in show_df.columns:
+      show_df = show_df.drop(columns=[_key_col])
+
+    # Only show meaningful changes: improvements (delta > 0) and regressions (delta < 0)
+    improvements = (
+      show_df[show_df["delta"] > 0]
+      .sort_values("delta", ascending=False)
+      .head(_top_n)
+    )
+    regressions = (
+      show_df[show_df["delta"] < 0]
+      .sort_values("delta", ascending=True)
+      .head(_top_n)
+    )
+
+    def _render_top(title: str, df: pd.DataFrame) -> None:
+      if _key_col == "input":
+        t = Table(title=title)
+        t.add_column("Input", style="white")
+        t.add_column("A → B", style="green")
+        t.add_column("Δ", style="yellow")
+        for _, row in df.iterrows():
+          inp = _truncate(row.get("input", row.get("key", "")))
+          a = row.get("score_a", float("nan"))
+          b = row.get("score_b", float("nan"))
+          t.add_row(inp, f"{a:.2f} → {b:.2f}", f"{(b - a):.2f}")
+      else:
+        t = Table(title=title)
+        t.add_column(f"Key ({_key_col})", style="cyan")
+        t.add_column("Input", style="white")
+        t.add_column("A → B", style="green")
+        t.add_column("Δ", style="yellow")
+        for _, row in df.iterrows():
+          key = str(row["key"]) if "key" in row else ""
+          inp = _truncate(row.get("input", ""))
+          a = row.get("score_a", float("nan"))
+          b = row.get("score_b", float("nan"))
+          t.add_row(key, inp, f"{a:.2f} → {b:.2f}", f"{(b - a):.2f}")
+      console.print(t)
+
+    if not improvements.empty:
+      _render_top(f"Top {_top_n} Improvements", improvements)
+    else:
+      console.print(Panel.fit("No improvements (all deltas ≤ 0)", title="Improvements", border_style="green"))
+
+    if not regressions.empty:
+      _render_top(f"Top {_top_n} Regressions", regressions)
+    else:
+      console.print(Panel.fit("No regressions (all deltas ≥ 0)", title="Regressions", border_style="yellow"))
+
+  # Optional output
+  if _output:
+    out_str = str(_output)
+    try:
+      if out_str.endswith(".json"):
+        payload: Dict[str, Any] = {
+          "files": {"a": str(file_a), "b": str(file_b)},
+          "key_col": _key_col,
+          "pass_threshold": _threshold,
+          "counts": {
+            "total_a": total_a,
+            "total_b": total_b,
+            "valid_a": m_a["n"],
+            "valid_b": m_b["n"],
+            "join": len(joined),
+          },
+          "metrics": {
+            "a": m_a,
+            "b": m_b,
+            "delta": {
+              "avg": (m_b["avg"] - m_a["avg"]),
+              "median": (m_b["median"] - m_a["median"]),
+              "std": (m_b["std"] - m_a["std"]),
+              "accuracy": (
+                None
+                if _threshold is None
+                else (m_b["accuracy"] or 0.0) - (m_a["accuracy"] or 0.0)
+              ),
+            },
+          },
+          "top": {
+            "improvements": improvements.head(_top_n).to_dict("records") if not joined.empty else [],
+            "regressions": regressions.head(_top_n).to_dict("records") if not joined.empty else [],
+          },
+        }
+        _output.parent.mkdir(parents=True, exist_ok=True)
+        _output.write_text(json.dumps(payload, indent=2))
+        console.print(f"[green]Saved comparison JSON to {_output}[/green]")
+      elif out_str.endswith(".csv"):
+        out_df = joined[["key", "score_a", "score_b", "delta"]]
+        _output.parent.mkdir(parents=True, exist_ok=True)
+        out_df.to_csv(_output, index=False)
+        console.print(f"[green]Saved joined CSV to {_output}[/green]")
+      else:
+        console.print(
+          f"[yellow]Unsupported output format for {output}. Use .json or .csv[/yellow]"
+        )
+    except Exception as e:
+      console.print(f"[red]Failed to write output: {e}[/red]")
