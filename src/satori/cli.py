@@ -61,7 +61,7 @@ def run(
     None,
     "--judge-model",
     "-j",
-    help="Model to use as judge (defaults to gpt-4o if not specified)",
+    help="Model to use as judge (defaults to gpt-4.1 if not specified)",
   ),
   output: Optional[Path] = typer.Option(
     None,
@@ -120,14 +120,14 @@ def run(
 
   This command loads test cases from a CSV file (which must contain 'input' and
   'expected_output' columns), generates responses using the specified LLM provider,
-  and evaluates the quality of those responses using an LLM judge (GPT-4o by default).
+  and evaluates the quality of those responses using an LLM judge (GPT-4.1 by default).
 
   Examples:
     # Basic evaluation with OpenAI
     satori run dataset.csv --provider openai:gpt-4o
 
     # Evaluation with custom judge and output file
-    satori run data.csv --provider anthropic:claude-3-opus --judge-model gpt-4o --output results.json
+    satori run data.csv --provider anthropic:claude-3-opus --judge-model gpt-4.1 --output results.json
 
     # High-throughput evaluation with rate limiting
     satori run large_dataset.csv --provider openai:gpt-4o --concurrency 10 --rate-limit-delay 0.5
@@ -148,9 +148,9 @@ def run(
     }
     config = get_config(cli_args)
 
-    # Use config values (CLI args override config file/env vars)
+    # Use selected provider; judge defaults to GPT-4.1 ALWAYS unless explicitly provided via -j
     actual_provider = provider or config.default_provider
-    actual_judge = judge_model or config.default_judge
+    actual_judge = judge_model or "gpt-4.1"
     actual_concurrency = (
       concurrency if "concurrency" in locals() else config.concurrency
     )
