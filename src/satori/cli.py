@@ -11,6 +11,8 @@ from rich.progress import (
   SpinnerColumn,
   TaskProgressColumn,
   TextColumn,
+  TimeElapsedColumn,
+  TimeRemainingColumn,
 )
 from rich.table import Table
 from rich.traceback import install as rich_traceback_install
@@ -239,22 +241,36 @@ def run(
       TextColumn("[progress.description]{task.description}"),
       BarColumn(),
       TaskProgressColumn(),
+      TimeElapsedColumn(),
+      TimeRemainingColumn(),
       console=console,
     )
 
     task_ref = {}
+    successes = 0
+    failures = 0
 
     def update_progress(current: int, total: int, result):
+      nonlocal successes, failures
+      if result and getattr(result, "error", None):
+        failures += 1
+        if verbose:
+          console.print(
+            f"[yellow]Warning: Test {current}/{total} failed: {result.error}[/yellow]"
+          )
+      else:
+        successes += 1
       if "task" in task_ref:
-        progress.update(task_ref["task"], advance=1)
-      if verbose and result.error:
-        console.print(
-          f"[yellow]Warning: Test {current}/{total} failed: {result.error}[/yellow]"
+        progress.update(
+          task_ref["task"],
+          advance=1,
+          description=f"[cyan]Evaluating... (ok: {successes}, fail: {failures})",
         )
 
     with progress:
       task = progress.add_task(
-        "[cyan]Evaluating test cases...", total=total_cases
+        f"[cyan]Evaluating... (ok: {successes}, fail: {failures})",
+        total=total_cases,
       )
       task_ref["task"] = task
 
@@ -278,6 +294,12 @@ def run(
     table.add_row("Median Score", f"{batch_results.median_score:.2f}")
     table.add_row("Std Deviation", f"{batch_results.std_score:.2f}")
     table.add_row("Total Time", f"{batch_results.total_time:.2f}s")
+    throughput = (
+      len(batch_results.results) / batch_results.total_time
+      if batch_results.total_time > 0
+      else 0.0
+    )
+    table.add_row("Throughput (cases/s)", f"{throughput:.2f}")
 
     console.print(table)
 
